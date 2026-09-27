@@ -1,0 +1,340 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Agri render</title>
+<style>html,body{margin:0;background:#000;overflow:hidden}canvas{display:block}</style>
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.169.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.169.0/examples/jsm/"
+} }
+</script>
+</head>
+<body>
+<canvas id="c"></canvas>
+<script type="module">
+// Deterministic shot renderer for the 30 L spraying drone. Frames must be
+// requested in order within a shot (rotors and spray integrate per frame).
+import * as THREE from 'three';
+import { createStage } from '../js/stage.js';
+import { buildAgri, createSpray, LAYOUT } from '../js/agri.js';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+
+const canvas = document.getElementById('c');
+let S, D, spray, W = 1920, H = 1080, alpha = false;
+let bgTex, blackBg, orthoCam, field, soil, swathBand, studioFloor, fogStudio, fogField;
+const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
+const smooth = (a, b, t) => { const x = clamp((t - a) / (b - a), 0, 1); return x * x * (3 - 2 * x); };
+const lerp = (a, b, k) => a + (b - a) * k;
+const lerpV = (a, b, k) => a.map((v, i) => lerp(v, b[i], k));
+const TAU = Math.PI * 2;
+const FOOT = LAYOUT.footY;                 // feet on the ground at this height
+const CANOPY_H = 0.42, PERIOD = 3.0;       // crop height, field pattern period (m)
+
+function gradientBackground() {
+  const cv = document.createElement('canvas'); cv.width = 1920; cv.height = 1080;
+  const c = cv.getContext('2d');
+  const g = c.createRadialGradient(960, 560, 40, 960, 560, 1150);
+  g.addColorStop(0, '#2a2c31'); g.addColorStop(0.45, '#111214'); g.addColorStop(1, '#000');
+  c.fillStyle = g; c.fillRect(0, 0, 1920, 1080);
+  const t = new THREE.CanvasTexture(cv); t.colorSpace = THREE.SRGBColorSpace;
+  return t;
+}
+
+// ---------------------------------------------------------------------
+// crop field: rows of low-poly plants on dark soil; the pattern repeats
+// every PERIOD metres so it can scroll seamlessly under the drone
+// ---------------------------------------------------------------------
+let seed = 7; const rnd = () => { seed = (seed * 16807) % 2147483647; return (seed - 1) / 2147483646; };
+function makeField() {
+  const grp = new THREE.Group();
+  const soilTex = (() => {
+    const cv = document.createElement('canvas'); cv.width = 64; cv.height = 256;
+    const c = cv.getContext('2d');
+    c.fillStyle = '#241f1a'; c.fillRect(0, 0, 64, 256);
+    for (let i = 0; i < 900; i++) { c.fillStyle = `rgba(${40 + rnd() * 30},${34 + rnd() * 22},${26 + rnd() * 16},.5)`; c.fillRect(rnd() * 64, rnd() * 256, 1 + rnd() * 2, 1 + rnd() * 2); }
+    c.fillStyle = 'rgba(0,0,0,.25)'; c.fillRect(0, 118, 64, 20);
+    const t = new THREE.CanvasTexture(cv); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.colorSpace = THREE.SRGBColorSpace;
+    t.repeat.set(40, 60); t.rotation = Math.PI / 2;
+    return t;
+  })();
+  soil = new THREE.Mesh(new THREE.PlaneGeometry(90, 60), new THREE.MeshStandardMaterial({ map: soilTex, roughness: 1, metalness: 0 }));
+  soil.rotation.x = -Math.PI / 2; soil.receiveShadow = true;
+  grp.add(soil);
+  // plant: leaf cards arranged in a rosette (alpha-tested texture)
+  const leafTex = (() => {
+    const cv = document.createElement('canvas'); cv.width = 128; cv.height = 256;
+    const c = cv.getContext('2d');
+    const g = c.createLinearGradient(0, 256, 0, 0);
+    g.addColorStop(0, '#2c4a22'); g.addColorStop(0.6, '#4d7a35'); g.addColorStop(1, '#6a9443');
+    c.fillStyle = g;
+    c.beginPath(); c.moveTo(64, 252);
+    c.bezierCurveTo(4, 190, 6, 70, 64, 4); c.bezierCurveTo(122, 70, 124, 190, 64, 252); c.fill();
+    c.strokeStyle = 'rgba(190,220,150,.35)'; c.lineWidth = 3; c.beginPath(); c.moveTo(64, 250); c.lineTo(64, 14); c.stroke();
+    c.lineWidth = 1.5;
+    for (let i = 0; i < 6; i++) { const y = 210 - i * 32; c.beginPath(); c.moveTo(64, y); c.lineTo(30, y - 26); c.moveTo(64, y); c.lineTo(98, y - 26); c.stroke(); }
+    const t = new THREE.CanvasTexture(cv); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 8;
+    return t;
+  })();
+  const leaves = [];
+  const NL = 9;
+  for (let i = 0; i < NL; i++) {
+    const L = 0.2 + rnd() * 0.08, Wd = L * 0.5;
+    const pg = new THREE.PlaneGeometry(Wd, L, 1, 3);
+    pg.translate(0, L / 2, 0);
+    // gentle droop along the leaf
+    const pp = pg.attributes.position;
+    for (let v = 0; v < pp.count; v++) { const y = pp.getY(v); pp.setZ(v, -0.35 * y * y / L); }
+    const tilt = i < 3 ? 0.25 + rnd() * 0.3 : 0.75 + rnd() * 0.35;
+    pg.rotateX(tilt);
+    pg.rotateY((i / NL) * TAU + rnd() * 0.5);
+    pg.translate(0, 0.03 + (i < 3 ? 0.06 : 0) , 0);
+    leaves.push(pg);
+  }
+  let geo = mergeGeometries(leaves);
+  geo.computeVertexNormals();
+  const mat = new THREE.MeshStandardMaterial({ map: leafTex, color: 0xffffff, roughness: 0.7, metalness: 0, alphaTest: 0.45, side: THREE.DoubleSide });
+  const ROWS = 45, PER = 12, REP = 30, GAP = 0.9, SP = PERIOD / PER;   // 90 m of field
+  const n = ROWS * PER * REP;
+  const inst = new THREE.InstancedMesh(geo, mat, n);
+  inst.castShadow = true; inst.receiveShadow = true;
+  const base = [];
+  for (let r = 0; r < ROWS; r++) for (let j = 0; j < PER; j++) base.push({ r, dx: (rnd() - 0.5) * 0.08, dz: (rnd() - 0.5) * 0.1, s: 0.85 + rnd() * 0.35, ry: rnd() * TAU, c: rnd() });
+  const col = new THREE.Color(), m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler();
+  let k = 0;
+  const cells = [];
+  for (let rep = 0; rep < REP; rep++) for (const b of base) {
+    const j = k % PER;
+    const x = -60 + rep * PERIOD + j * SP + b.dx, z = (b.r - (ROWS - 1) / 2) * GAP + b.dz;
+    cells.push({ x, z, s: b.s, ry: b.ry });
+    col.setHSL(0.22 + b.c * 0.06, 0.25 + b.c * 0.2, 0.62 + b.c * 0.2);
+    inst.setColorAt(k, col);
+    k++;
+  }
+  grp.add(inst);
+  grp.userData = { inst, cells };
+  setClearing(grp, 0);
+  return grp;
+}
+// hide plants inside a radius around the origin (take-off clearing)
+function setClearing(grp, radius) {
+  const { inst, cells } = grp.userData;
+  const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler();
+  cells.forEach((c, i) => {
+    const hide = radius > 0 && Math.hypot(c.x, c.z * 1.2) < radius;
+    const s = hide ? 0.0001 : c.s;
+    q.setFromEuler(e.set(0, c.ry, 0));
+    m4.compose(new THREE.Vector3(c.x, 0, c.z), q, new THREE.Vector3(s, s, s));
+    inst.setMatrixAt(i, m4);
+  });
+  inst.instanceMatrix.needsUpdate = true;
+}
+
+// translucent ground band showing the treated swath behind the drone
+function makeSwath() {
+  const cv = document.createElement('canvas'); cv.width = 256; cv.height = 64;
+  const c = cv.getContext('2d');
+  const g = c.createLinearGradient(0, 0, 256, 0);
+  g.addColorStop(0, 'rgba(120,165,235,0)'); g.addColorStop(0.5, 'rgba(120,165,235,.14)'); g.addColorStop(0.97, 'rgba(150,190,245,.36)'); g.addColorStop(1, 'rgba(150,190,245,0)');
+  c.fillStyle = g; c.fillRect(0, 0, 256, 64);
+  const e = c.createLinearGradient(0, 0, 256, 0); e.addColorStop(0, 'rgba(190,215,250,0)'); e.addColorStop(0.97, 'rgba(190,215,250,.95)'); e.addColorStop(1, 'rgba(190,215,250,0)'); c.fillStyle = e; c.fillRect(0, 0, 256, 2); c.fillRect(0, 62, 256, 2);
+  const t = new THREE.CanvasTexture(cv); t.colorSpace = THREE.SRGBColorSpace;
+  const m = new THREE.Mesh(new THREE.PlaneGeometry(14, 3.75), new THREE.MeshBasicMaterial({ map: t, transparent: true, depthWrite: false, opacity: 0 }));
+  m.rotation.x = -Math.PI / 2; m.renderOrder = 4;
+  return m;
+}
+
+// ---------------------------------------------------------------------
+// shots: each returns the state at time t (seconds)
+// cam, tgt, fov, y (drone height), pitch, roll, yaw, lift (rotors 0..1),
+// spray (0..1), fwd (m/s), world ('studio'|'field'), soil (soil height),
+// clearing (m), radar (0..1), cone/fan (beam lengths), swath (0..1), contact
+// ---------------------------------------------------------------------
+const FIELD_Y = -3.0;             // soil height during spray passes: body ~2.6 m above the canopy
+const SHOTS = {
+  rise: { dur: 4.2, f: (t) => ({ world: 'field', soil: FOOT, clearing: 2.2,
+    cam: lerpV([3.5, 0.0, 2.6], [4.0, 1.1, 2.6], smooth(0, 4.2, t)),
+    tgt: lerpV([0, -0.25, 0], [0, 1.25, 0], smooth(1.3, 4.2, t)),
+    fov: 32, y: 1.9 * smooth(1.5, 4.2, t), lift: smooth(0.2, 1.4, t), spray: 0, fwd: 0 }) },
+  spraypass: { dur: 4.2, f: (t) => { const k = smooth(0, 4.2, t);
+    return { world: 'field', soil: FIELD_Y, cam: lerpV([-2.5, 0.15, 4.4], [-0.6, 0.5, 4.8], k), tgt: lerpV([0.1, -0.95, 0], [0.4, -1.0, 0], k),
+      fov: 34, y: 0.02 * Math.sin(t * 1.6), pitch: -0.1, lift: 1, spray: 1, fwd: 5.5, off: t * 5.5 }; } },
+  swath: { dur: 3.8, f: (t) => ({ world: 'field', soil: FIELD_Y,
+    cam: lerpV([-6.2, 3.4, 3.4], [-5.6, 4.6, 1.2], smooth(0, 3.8, t)), tgt: [-0.6, -1.9, 0],
+    fov: 36, y: 0, pitch: -0.1, lift: 1, spray: 1, fwd: 5.5, off: 23 + t * 5.5, swath: smooth(0.3, 1.6, t) }) },
+  radar: { dur: 4.0, f: (t) => { const k = smooth(0, 4, t);
+    return { world: 'field', soil: FIELD_Y, cam: lerpV([-2.6, 1.3, 3.7], [-1.0, 1.05, 4.3], k), tgt: lerpV([1.1, -0.85, 0], [1.6, -0.9, 0], k),
+      fov: 36, y: 0, pitch: -0.1, lift: 1, spray: 0.9, fwd: 5.5, off: 45 + t * 5.5, radar: smooth(0.2, 1.3, t), cone: 2.15, fan: 5.5 }; } },
+  nozzle: { dur: 3.2, f: (t) => { const a = lerp(0.2, 0.62, smooth(0, 3.2, t)), c = [0.81, -0.24, 0.47];
+    return { world: 'field', soil: FIELD_Y, cam: [c[0] + 1.25 * Math.cos(a + 0.55), -0.2, c[2] + 1.25 * Math.sin(a + 0.55)], tgt: [c[0], -0.3, c[2]],
+      fov: 30, y: 0, pitch: 0, lift: 1, spray: 1, fwd: 0.6, off: 60 + t * 0.6, sprayOpt: { speed: 2.2, lateral: 0.55, life: 0.75, drag: 1.2 } }; } },
+  tank: { dur: 3.4, f: (t) => { const a = lerp(-0.62, 0.55, smooth(0, 3.4, t));
+    return { world: 'studio', cam: [1.55 * Math.cos(a), 0.05, 1.55 * Math.sin(a)], tgt: [0.05, -0.2, 0], fov: 30,
+      y: 0, lift: 0, spray: 0, fwd: 0, contact: true }; } },
+  land: { dur: 4.4, f: (t) => ({ world: 'field', soil: FOOT, clearing: 2.2,
+    cam: lerpV([3.9, 1.7, -2.0], [3.3, 0.2, -2.5], smooth(0, 4.4, t)), tgt: lerpV([0, 1.55, 0], [0, -0.25, 0], smooth(0.6, 4.0, t)),
+    fov: 32, y: 1.9 * (1 - smooth(0.4, 3.4, t)), lift: 1 - smooth(3.5, 4.4, t), spray: 0, fwd: 0 }) },
+  // seamless loops
+  orbit: { dur: 10.0, f: (t) => { const a = 0.55 + TAU * t / 10;
+    return { world: 'studio', cam: [4.3 * Math.cos(a), 1.95, 4.3 * Math.sin(a)], tgt: [0, -0.28, 0], fov: 30, y: 0, lift: 0, spray: 0, fwd: 0, contact: true }; } },
+  hoverloop: { dur: 6.0, f: (t) => { const a = 0.62 + 0.14 * Math.sin(TAU * t / 6);
+    return { world: 'studio', cam: [4.3 * Math.cos(a), 1.2 + 0.08 * Math.sin(TAU * t / 6), 4.3 * Math.sin(a)], tgt: [0, -0.1, 0], fov: 30,
+      y: 0.03 * Math.sin(TAU * t / 3), lift: 1, spray: 0, fwd: 0, roll: 0.01 * Math.sin(TAU * t / 6) }; } },
+  sprayloop: { dur: 6.0, f: (t) => ({ world: 'field', soil: FIELD_Y,
+    cam: [-3.1, 0.55, 5.6], tgt: [0.1, -1.1, 0], fov: 34, y: 0.02 * Math.sin(TAU * t / 3), pitch: -0.1, lift: 1, spray: 1, fwd: 5.5, off: t * 5.5, warm: 1.4 }) },
+  radarloop: { dur: 6.0, f: (t) => ({ world: 'field', soil: FIELD_Y,
+    cam: [1.2, 1.5, -4.4], tgt: [1.8, -1.1, 0.2], fov: 36, y: 0.02 * Math.sin(TAU * t / 3), pitch: -0.1, lift: 1, spray: 0.8, fwd: 5.5, off: 12 + t * 5.5,
+    radar: 1, cone: 2.15, fan: 5.5, warm: 1.4 }) },
+  nozzleloop: { dur: 4.0, f: (t) => { const c = [0.81, -0.24, 0.47];
+    return { world: 'field', soil: FIELD_Y, cam: [c[0] + 1.2 * Math.cos(1.0), -0.15, c[2] + 1.2 * Math.sin(1.0)], tgt: [c[0], -0.32, c[2]], fov: 30,
+      y: 0, lift: 1, spray: 1, fwd: 0.6, off: 60 + t * 0.6, warm: 1.2, sprayOpt: { speed: 2.2, lateral: 0.55, life: 0.75, drag: 1.2 } }; } },
+  rotorloop: { dur: 4.0, f: () => ({ world: 'studio', cam: [1.95, 0.72, 1.35], tgt: [0.88, 0.05, 0.5], fov: 28, y: 0, lift: 1, spray: 0, fwd: 0 }) },
+  // stills
+  hero:    { dur: 0, f: () => ({ world: 'studio', cam: [3.3, 2.1, 1.35], tgt: [0, -0.2, 0], fov: 30, y: 0, lift: 0, contact: true }) },
+  hero2:   { dur: 0, f: () => ({ world: 'studio', cam: [3.25, 1.05, 2.2], tgt: [0, -0.2, 0], fov: 30, y: 0, lift: 0, contact: true }) },
+  hover3q: { dur: 0, f: () => ({ world: 'studio', cam: [3.6, 1.05, 2.5], tgt: [0, -0.12, 0], fov: 30, y: 0, lift: 1 }) },
+  tankstill: { dur: 0, f: () => ({ world: 'studio', cam: [1.3, -0.25, -0.15], tgt: [0.05, -0.2, 0], fov: 30, y: 0, lift: 0, contact: true }) },
+  motorstill:{ dur: 0, f: () => ({ world: 'studio', cam: [1.6, 0.5, 1.15], tgt: [0.86, -0.02, 0.5], fov: 28, y: 0, lift: 0 }) },
+  nozzlestill:{ dur: 0, f: () => ({ world: 'studio', cam: [1.35, -0.42, 0.98], tgt: [0.8, -0.27, 0.47], fov: 28, y: 0, lift: 0 }) },
+  under:   { dur: 0, f: () => ({ world: 'studio', cam: [2.2, -1.6, 1.4], tgt: [0, -0.3, 0], fov: 32, y: 0, lift: 0 }) },
+  front3:  { dur: 0, f: () => ({ world: 'studio', cam: [3.9, 0.55, 0.25], tgt: [0, -0.2, 0], fov: 30, y: 0, lift: 0, contact: true }) },
+  spraystill: { dur: 1.6, f: (t) => ({ world: 'field', soil: FIELD_Y, cam: [-3.1, 0.55, 5.6], tgt: [0.1, -1.1, 0], fov: 34, y: 0, pitch: -0.1, lift: 1, spray: 1, fwd: 5.5, off: t * 5.5 }) },
+  radarstill: { dur: 1.6, f: (t) => ({ world: 'field', soil: FIELD_Y, cam: [1.2, 1.5, -4.4], tgt: [1.8, -1.1, 0.2], fov: 36, y: 0, pitch: -0.1, lift: 1, spray: 0.8, fwd: 5.5, off: 12 + t * 5.5, radar: 1, cone: 2.15, fan: 5.5 }) },
+  // orthographic views for drawings
+  plan:  { dur: 0, ortho: 'top' },
+  side:  { dur: 0, ortho: 'side' },
+  front: { dur: 0, ortho: 'front' },
+};
+
+let shot = null, lastT = 0;
+function applyState(st, dt) {
+  const g = D.group;
+  g.position.y = st.y || 0;
+  g.rotation.set(st.roll || 0, st.yaw || 0, st.pitch || 0);
+  const SPIN = 30, M = D.materials;
+  D.parts.rotors.forEach((r) => {
+    r.speed = st.lift || 0;
+    r.angle += r.dir * SPIN * r.speed * dt;
+    r.prop.rotation.y = r.angle;
+    r.disc.material.opacity = clamp((r.speed - 0.25) / 0.5, 0, 1) * 0.6;
+    r.blades.forEach((b) => { b.material = r.speed > 0.6 ? M.bladeFade : M.blade; });
+  });
+  const isField = st.world === 'field';
+  field.visible = isField;
+  studioFloor.visible = !isField && !!st.floor;
+  S.contact.visible = !isField && !!st.contact;
+  if (isField) {
+    field.position.y = st.soil ?? FIELD_Y;
+    field.position.x = -(((st.off || 0) % PERIOD) + PERIOD) % PERIOD;
+    if (field.userData.clear !== (st.clearing || 0)) { setClearing(field, st.clearing || 0); field.userData.clear = st.clearing || 0; }
+    S.key.castShadow = true;
+    swathBand.position.set(-7 + 0.6, (st.soil ?? FIELD_Y) + CANOPY_H + 0.1, 0);
+    swathBand.material.opacity = st.swath || 0;
+    S.scene.fog = fogField; if (!alpha) S.scene.background = blackBg;
+  } else {
+    S.key.castShadow = false; swathBand.material.opacity = 0;
+    S.scene.fog = fogStudio; if (!alpha) S.scene.background = bgTex;
+  }
+  D.showRadar((st.radar || 0) > 0.01, st.cone, st.fan);
+  if (st.radar) {
+    D.parts.cone.material.uniforms.a.value = 0.34 * st.radar;
+    D.parts.fan.material.uniforms.a.value = 0.3 * st.radar;
+    D.parts.fan.children[0].material.opacity = 0.35 * st.radar;
+  }
+  // spray integrates in world space
+  const o = st.sprayOpt || {};
+  spray.update(dt, g, D.parts.outlets, (st.spray || 0) > 0.5, st.fwd || 0, 6500 * (st.spray || 0), o);
+  S.camera.fov = st.fov || 30;
+  S.camera.position.set(...st.cam);
+  S.camera.lookAt(...st.tgt);
+  S.camera.updateProjectionMatrix();
+}
+
+function setOrtho(kind) {
+  D.snap('parked'); D.group.position.set(0, 0, 0); D.group.rotation.set(0, 0, 0);
+  D.showRadar(false); field.visible = false; S.contact.visible = false; studioFloor.visible = false; spray.reset();
+  // props parked along the arms for drawings
+  D.parts.rotors.forEach((r, i) => { r.prop.rotation.y = -LAYOUT.angles[i] * Math.PI / 180; });
+  D.group.remove(D.parts.radar);
+  const box = new THREE.Box3().setFromObject(D.group, true);
+  D.group.add(D.parts.radar);
+  const size = box.getSize(new THREE.Vector3()), c = box.getCenter(new THREE.Vector3());
+  const aspect = W / H, pad = 1.05;
+  let w, h;
+  if (kind === 'top') { w = size.z; h = size.x; }
+  else if (kind === 'side') { w = size.x; h = size.y; }
+  else { w = size.z; h = size.y; }
+  let halfW = (w * pad) / 2, halfH = (h * pad) / 2;
+  if (halfW / halfH < aspect) halfW = halfH * aspect; else halfH = halfW / aspect;
+  orthoCam = new THREE.OrthographicCamera(-halfW, halfW, halfH, -halfH, 0.01, 20);
+  if (kind === 'top') { orthoCam.position.set(c.x, 6, c.z); orthoCam.up.set(1, 0, 0); }
+  else if (kind === 'side') orthoCam.position.set(c.x, c.y, 6);
+  else orthoCam.position.set(6, c.y, c.z);
+  orthoCam.lookAt(c);
+  orthoCam.updateProjectionMatrix();
+}
+
+window.R = {
+  ready: false,
+  async init(cfg = {}) {
+    W = cfg.w || 1920; H = cfg.h || 1080; alpha = !!cfg.alpha;
+    canvas.width = W; canvas.height = H; canvas.style.width = W + 'px'; canvas.style.height = H + 'px';
+    S = createStage(canvas, { alpha, capture: true, pixelRatio: cfg.pr || 1, envIntensity: cfg.env ?? 0.62, groundY: FOOT, contactW: 3.0, contactD: 3.0, shadowExtent: 4.5, keyScale: 1.6 });
+    S.resize(W, H);
+    if (cfg.contact != null) S.contact.material.opacity = cfg.contact;
+    D = buildAgri(THREE);
+    S.scene.add(D.group);
+    spray = createSpray(THREE, 12000);
+    spray.material.size = cfg.spraySize || 0.085; spray.material.opacity = 0.25;
+    S.scene.add(spray.points);
+    field = makeField(); field.visible = false; S.scene.add(field);
+    swathBand = makeSwath(); S.scene.add(swathBand);
+    studioFloor = new THREE.Mesh(new THREE.CircleGeometry(12, 96), new THREE.MeshStandardMaterial({ color: 0x0e0e10, roughness: 0.92 }));
+    studioFloor.rotation.x = -Math.PI / 2; studioFloor.position.y = FOOT; studioFloor.receiveShadow = true; studioFloor.visible = false;
+    S.scene.add(studioFloor);
+    fogStudio = new THREE.Fog(0x000000, 6, 14); fogField = new THREE.FogExp2(0x000000, 0.075); S.scene.fog = fogStudio;
+    if (!alpha) { bgTex = gradientBackground(); blackBg = new THREE.Color(0x000000); S.scene.background = bgTex; }
+    return { w: W, h: H };
+  },
+  shot(name) {
+    shot = SHOTS[name]; lastT = 0;
+    D.parts.rotors.forEach((r, i) => { r.angle = i * 0.9 + 0.4; });
+    spray.reset();
+    if (shot.ortho) { setOrtho(shot.ortho); return 0; }
+    // pre-roll: loops and stills start with the spray already falling
+    const st0 = shot.f(0);
+    const warm = st0.warm || (shot.dur && /still$/.test(name) ? 0 : 0);
+    if (warm) { for (let k = 0; k < warm * 30; k++) { const tt = -warm + k / 30; applyState(shot.f(((tt % shot.dur) + shot.dur) % shot.dur), 1 / 30); } }
+    return shot.dur;
+  },
+  at(t, type = 'image/jpeg', q = 0.93) {
+    const dt = shot.dur ? Math.max(0, t - lastT) : 0;
+    if (shot.ortho) { S.renderer.render(S.scene, orthoCam); }
+    else {
+      // integrate in 1/60 s steps so particles behave the same at any fps
+      const steps = Math.max(1, Math.round(dt * 60));
+      for (let s = 1; s <= steps; s++) applyState(shot.f(lastT + (dt * s) / steps), dt / steps);
+      if (!dt) applyState(shot.f(t), 0);
+      S.render();
+    }
+    lastT = t;
+    return canvas.toDataURL(type, q);
+  },
+  shots: Object.keys(SHOTS),
+  project(points) {
+    D.group.remove(D.parts.radar);
+    const box = new THREE.Box3().setFromObject(D.group, true);
+    D.group.add(D.parts.radar);
+    const cam = orthoCam; cam.updateMatrixWorld();
+    const corners = [];
+    for (const x of [box.min.x, box.max.x]) for (const y of [box.min.y, box.max.y]) for (const z of [box.min.z, box.max.z]) corners.push(new THREE.Vector3(x, y, z).project(cam));
+    const xs = corners.map((c) => c.x), ys = corners.map((c) => c.y);
+    const [x0, x1, y0, y1] = [Math.min(...xs), Math.max(...xs), Math.min(...ys), Math.max(...ys)];
+    return points.map(([x, y, z]) => { const p = new THREE.Vector3(x, y, z).project(cam); return [+(((p.x - x0) / (x1 - x0)) * 100).toFixed(2), +(((y1 - p.y) / (y1 - y0)) * 100).toFixed(2)]; });
+  },
+};
+window.R.ready = true;
+</script>
+</body>
+</html>
