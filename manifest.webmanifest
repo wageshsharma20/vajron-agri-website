@@ -1,6 +1,6 @@
 {
-  "name": "VAJRON 30 L",
-  "short_name": "VAJRON 30 L",
+  "name": "VAJRON Smart Agriculture Drone",
+  "short_name": "VAJRON Agri",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
@@ -8,6 +8,11 @@
   "background_color": "#000000",
   "theme_color": "#000000",
   "icons": [
-    { "src": "assets/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" }
+    {
+      "src": "assets/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    }
   ]
 }

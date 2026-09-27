@@ -4,13 +4,13 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>VAJRON Smart Agriculture Drone | 30-Litre Precision Spraying</title>
-<meta name="description" content="VAJRON 30-litre heavy-payload agricultural spraying drone: a foldable 6-rotor carbon hexacopter with a 3.5-4 m swath, about 3.5-4 ha per hour, flow-linked precision spraying and a dual-radar safety layer.">
+<meta name="description" content="VAJRON Smart Agriculture Drone, a 30-litre heavy-payload spraying drone: a foldable 6-rotor carbon hexacopter with a 3.5-4 m swath, about 3.5-4 ha per hour, flow-linked precision spraying and a dual-radar safety layer.">
 <meta name="theme-color" content="#000000">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="VAJRON 30 L">
-<meta property="og:title" content="VAJRON 30 L Spraying Drone">
+<meta property="og:title" content="VAJRON Smart Agriculture Drone">
 <meta property="og:description" content="30-litre heavy-payload agricultural spraying drone with dual-radar safety and flow-linked precision spraying.">
 <meta property="og:image" content="assets/og-image.jpg">
 <meta property="og:type" content="website">
@@ -842,12 +842,39 @@ button{font:inherit;color:inherit;background:none;border:0;padding:0;cursor:poin
 :is(.light,.white) .head--center h2::after{margin-inline:auto}
 /* footer in deep navy */
 .foot{background:#06122A;color:#9DB0CC}
+/* ---------- v4: fewer template-style details ---------- */
+/* the product name in solid white rather than gradient text */
+.hero__title .brand{background:none;-webkit-background-clip:border-box;background-clip:border-box;color:#fff}
+/* no accent bar under section headings */
+:is(.light,.white) .head h2::after{content:none}
+/* chapter details as one plain caption line rather than pill chips */
+.chapter__foot{gap:0}
+html .chapter__foot span{background:none;box-shadow:none;-webkit-backdrop-filter:none;backdrop-filter:none;border-radius:0;padding:.15rem .95rem;font-weight:600;color:rgba(255,255,255,.92);text-shadow:0 1px 14px rgba(0,0,0,.65)}
+html .chapter__foot span + span{box-shadow:inset 1px 0 0 rgba(255,255,255,.38)}
+/* short rule bullets rather than circled check marks */
+.ticks li{grid-template-columns:.95rem 1fr;gap:.7rem}
+html .ticks li::before{width:.75rem;height:2px;border-radius:2px;margin-top:.74em;background:rgba(255,255,255,.7)}
+html :is(.light,.white) .ticks li::before{background:var(--blue)}
+html .onreq .ticks li::before{background:#fff}
+/* icons on their own, without tinted tiles */
+html .ico.ico{width:auto;height:auto;background:none;border-radius:0;display:block;place-items:start;justify-items:start}
+html .ico.ico svg{width:1.75rem;height:1.75rem}
+html :is(.light,.white) .ico.ico,html .role .ico.ico{color:var(--blue)}
+/* interaction hint as plain text */
+.hero__hint{background:none}
+/* contact card with the email and phone row */
+.ct__card--4{grid-template-columns:repeat(3,minmax(0,1fr))}
+.ct__card--4 > div:last-child{grid-column:1/-1}
+.ct__card a{color:#fff}
+@media (orientation:portrait) and (min-width:640px), (max-width:900px){.ct__card--4{grid-template-columns:repeat(2,minmax(0,1fr))}.ct__card--4 > div:nth-child(3){grid-column:1/-1}}
+@media (max-width:639px){.ct__card--4{grid-template-columns:1fr}}
+/* chapter titles never outgrow the space above the video */
+.chapter__title h2{font-size:min(clamp(2.2rem,1.1rem + 3vw,4.4rem),7svh)}
 /* THEME-V2-END */
 
 /* =====================================================================
    30 L SPRAYING DRONE ADDITIONS
    ===================================================================== */
-.hero__word{font-size:min(30vw,44svh)}
 .hero__pic img{filter:drop-shadow(0 34px 44px rgba(0,0,0,.6))}
 
 /* overview with the real photograph on white */
@@ -1038,7 +1065,7 @@ button{font:inherit;color:inherit;background:none;border:0;padding:0;cursor:poin
     </div>
 
     <div class="hero__stage">
-      <span class="hero__word" aria-hidden="true">30L</span>
+      <span class="hero__word" aria-hidden="true">VAJRON</span>
       <span class="hero__shadow" aria-hidden="true"></span>
       <div class="hero__craft" id="craft">
         <div class="hero__float">
@@ -1046,7 +1073,7 @@ button{font:inherit;color:inherit;background:none;border:0;padding:0;cursor:poin
             <source type="image/webp" srcset="assets/photo/drone-900.webp 900w, assets/photo/drone-1400.webp 1400w, assets/photo/drone-2000.webp 2000w"
                     sizes="(orientation: portrait) 94vw, 64vw">
             <img src="assets/photo/drone-1400.png" width="1400" height="957" fetchpriority="high" decoding="async"
-                 alt="The VAJRON 30 L spraying drone: blue canopy, white 30-litre tank, six folding carbon arms with large motors and two-blade folding propellers, and Y-type spray nozzles under the arms.">
+                 alt="The VAJRON Smart Agriculture Drone: blue canopy, white 30-litre tank, six folding carbon arms with large motors and two-blade folding propellers, and Y-type spray nozzles under the arms.">
           </picture>
         </div>
       </div>
@@ -1082,7 +1109,7 @@ button{font:inherit;color:inherit;background:none;border:0;padding:0;cursor:poin
       <div class="player__screen" id="film-player">
         <video class="player__video" muted playsinline loop preload="none" poster="assets/video/film-poster.jpg"
                data-src="assets/video/film-1920.mp4" data-src-small="assets/video/film-1280.mp4" data-autoplay
-               aria-label="Rendered film of the VAJRON 30 L spraying drone: lift-off, a spraying pass over crop rows, the spray swath, radar coverage, the nozzles, the tank and landing"></video>
+               aria-label="Rendered film of the VAJRON Smart Agriculture Drone: lift-off, a spraying pass over crop rows, the spray swath, radar coverage, the nozzles, the tank and landing"></video>
         <div class="player__shade" aria-hidden="true"></div>
         <div class="player__cap" aria-live="polite">
           <span class="player__num">00</span>
@@ -1111,7 +1138,7 @@ button{font:inherit;color:inherit;background:none;border:0;padding:0;cursor:poin
       <figure class="intro__photo" data-reveal>
         <img src="assets/photo/photo-white-1200.jpg" srcset="assets/photo/photo-white-1200.jpg 1200w, assets/photo/photo-white-2000.jpg 2000w"
              sizes="(orientation: portrait) 92vw, 52vw" width="1200" height="901" loading="lazy" decoding="async"
-             alt="Photograph of the VAJRON 30 L spraying drone on a white background, seen from the front and above.">
+             alt="Photograph of the VAJRON Smart Agriculture Drone on a white background, seen from the front and above.">
         <figcaption>Photograph of the aircraft</figcaption>
       </figure>
       <div data-reveal style="--i:1">
@@ -1138,7 +1165,7 @@ button{font:inherit;color:inherit;background:none;border:0;padding:0;cursor:poin
       </div>
       <div class="chapter__media">
         <video muted playsinline loop preload="none" poster="assets/video/orbit.jpg" data-src="assets/video/orbit-1920.mp4" data-autoplay
-               aria-label="The VAJRON 30 L spraying drone turning slowly on a studio turntable"></video>
+               aria-label="The VAJRON Smart Agriculture Drone turning slowly on a studio turntable"></video>
       </div>
       <p class="chapter__foot x-hide"><span>6-rotor hexacopter</span><span>2,028 mm wheelbase</span><span>Foldable carbon composite</span><span>IP67</span></p>
     </div>
@@ -1150,7 +1177,7 @@ button{font:inherit;color:inherit;background:none;border:0;padding:0;cursor:poin
         <div class="modes__view" data-reveal>
           <img src="assets/render/hero2-1200.png" srcset="assets/render/hero2-760.webp 760w, assets/render/hero2-1200.webp 1200w, assets/render/hero2-2000.webp 2000w"
                sizes="(orientation: portrait) 92vw, 55vw" width="1200" height="682" loading="lazy" decoding="async"
-               alt="Render of the VAJRON 30 L spraying drone parked on the ground.">
+               alt="Render of the VAJRON Smart Agriculture Drone parked on the ground.">
           <canvas aria-label="Interactive 3D model of the drone showing the selected mode. Drag sideways to turn it." role="img"></canvas>
           <p class="modes__note" hidden>Radar coverage shown schematically</p>
           <p class="modes__drag x-hide" aria-hidden="true"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M6 7 3 10l3 3M14 7l3 3-3 3M3 10h14"/></svg>Drag to rotate</p>
@@ -1243,7 +1270,7 @@ button{font:inherit;color:inherit;background:none;border:0;padding:0;cursor:poin
         <div class="ga__img">
           <img src="assets/render/side-1000.png" srcset="assets/render/side-1000.webp 1000w, assets/render/side-1800.webp 1800w"
                sizes="(max-width:1400px) 92vw, 80rem" width="1000" height="363" loading="lazy" decoding="async"
-               alt="Side view render of the VAJRON 30 L spraying drone: canopy on the centre frame, carbon arms with motors and propellers, nozzles under the arms, the tank below the frame and the landing gear.">
+               alt="Side view render of the VAJRON Smart Agriculture Drone: canopy on the centre frame, carbon arms with motors and propellers, nozzles under the arms, the tank below the frame and the landing gear.">
           <span class="pin" style="left:50%;top:9.1%;--i:0" aria-hidden="true">01</span>
           <span class="pin" style="left:29.5%;top:19.6%;--i:1" aria-hidden="true">02</span>
           <span class="pin" style="left:82.1%;top:8.8%;--i:2" aria-hidden="true">03</span>
@@ -1322,7 +1349,7 @@ button{font:inherit;color:inherit;background:none;border:0;padding:0;cursor:poin
       <figure class="dg" style="margin-top:1rem" data-reveal data-live>
         <div class="dg__head"><h3>Spray swath</h3><p>Front view, schematic</p></div>
         <svg viewBox="0 0 1000 560" role="img" aria-labelledby="sw-t sw-d" data-smil>
-          <title id="sw-t">Spray swath of the VAJRON 30 L spraying drone</title>
+          <title id="sw-t">Spray swath of the VAJRON Smart Agriculture Drone</title>
           <desc id="sw-d">The drone flies 2 to 3 metres above the crop canopy, a height held by the terrain-following radar. Spray from four dual-outlet nozzles covers a swath of about 3.5 to 4 metres.</desc>
           <defs>
             <linearGradient id="swf" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#12386E" stop-opacity=".34"/><stop offset="1" stop-color="#12386E" stop-opacity=".06"/></linearGradient>
@@ -1624,7 +1651,7 @@ button{font:inherit;color:inherit;background:none;border:0;padding:0;cursor:poin
     <div class="ds-top" data-reveal>
       <header class="head">
         <p class="eyebrow">Technical specifications</p>
-        <h2 id="spec-title">30 L spraying drone datasheet</h2>
+        <h2 id="spec-title">Smart Agriculture Drone datasheet</h2>
         <p class="head__lede x-hide">30-litre heavy-payload agricultural spraying drone system.</p>
       </header>
       <button class="btn btn--ink" type="button" data-print>
